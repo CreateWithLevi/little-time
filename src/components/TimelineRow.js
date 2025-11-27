@@ -1,9 +1,11 @@
-import React from 'react';
-import { View, Text, StyleSheet, ScrollView } from 'react-native';
+import React, { useRef, useEffect, useState } from 'react';
+import { View, Text, StyleSheet, ScrollView, Dimensions } from 'react-native';
 import Colors from '../constants/Colors';
 import { formatTime, isWorkingHour, getHourInZone } from '../utils/TimeHelpers';
 
 const HOUR_BLOCK_WIDTH = 48;
+const HOUR_BLOCK_MARGIN = 4;
+const FULL_BLOCK_WIDTH = HOUR_BLOCK_WIDTH + HOUR_BLOCK_MARGIN;
 const HOUR_BLOCK_HEIGHT = 52;
 
 /**
@@ -11,16 +13,54 @@ const HOUR_BLOCK_HEIGHT = 52;
  * Sticky header on the left, scrollable hour blocks
  */
 export default function TimelineRow({ city, currentTime, selectedHour }) {
+  const scrollViewRef = useRef(null);
+  const [scrollViewWidth, setScrollViewWidth] = useState(0);
+
   // Get the current hour in this city's timezone
   const currentHourInCity = getHourInZone(currentTime, city.zone);
   const currentTimeStr = formatTime(currentTime, city.zone);
+
+  // Calculate padding to center the first and last items
+  // We want the center of the first item to be at the center of the view
+  // View Center = scrollViewWidth / 2
+  // First Item Center = paddingLeft + (FULL_BLOCK_WIDTH / 2)
+  // So: paddingLeft = (scrollViewWidth / 2) - (FULL_BLOCK_WIDTH / 2)
+  const horizontalPadding = scrollViewWidth > 0
+    ? (scrollViewWidth / 2) - (FULL_BLOCK_WIDTH / 2)
+    : 0;
+
+  // Auto-scroll to center the selected hour
+  useEffect(() => {
+    if (scrollViewRef.current && scrollViewWidth > 0) {
+      // Item position relative to the scroll content start (including padding)
+      const itemX = horizontalPadding + (currentHourInCity * FULL_BLOCK_WIDTH);
+
+      // We want this itemX to be at the center of the viewport
+      // ScrollOffset = ItemX - (ViewportWidth / 2) + (ItemWidth / 2)
+      // But since we want the center of the item to align with center of viewport:
+      // Center of Item = itemX + (FULL_BLOCK_WIDTH / 2)
+      // Center of Viewport (in scroll coords) = ScrollOffset + (scrollViewWidth / 2)
+      // Equating them: ScrollOffset = itemX + (FULL_BLOCK_WIDTH / 2) - (scrollViewWidth / 2)
+
+      // Let's simplify:
+      // We want to scroll so that the start of the item is at (ViewWidth - ItemWidth)/2
+      // ScrollOffset = ItemX - (scrollViewWidth - FULL_BLOCK_WIDTH) / 2
+
+      const offset = itemX - (scrollViewWidth - FULL_BLOCK_WIDTH) / 2;
+
+      scrollViewRef.current.scrollTo({
+        x: offset,
+        animated: true,
+      });
+    }
+  }, [currentHourInCity, scrollViewWidth, horizontalPadding]);
 
   // Create array of 24 hours
   const hours = Array.from({ length: 24 }, (_, index) => ({
     hour: index,
     isWorking: isWorkingHour(index),
     isCurrent: index === currentHourInCity,
-    isSelected: index === selectedHour,
+    isSelected: index === currentHourInCity,
   }));
 
   return (
@@ -36,15 +76,20 @@ export default function TimelineRow({ city, currentTime, selectedHour }) {
 
       {/* Scrollable hour blocks */}
       <ScrollView
+        ref={scrollViewRef}
         horizontal
         showsHorizontalScrollIndicator={false}
+        scrollEnabled={false}
         style={styles.scrollView}
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={{
+          paddingHorizontal: horizontalPadding,
+          paddingVertical: 8,
+        }}
+        onLayout={(e) => setScrollViewWidth(e.nativeEvent.layout.width)}
       >
         {hours.map((hourData) => {
           const { hour, isWorking, isCurrent, isSelected } = hourData;
 
-          // Determine block color
           let blockColor = Colors.hourNonWorking;
           if (isSelected && isWorking) {
             blockColor = Colors.hourWorkingActive;
@@ -101,6 +146,7 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.surfaceSecondary,
     borderRightWidth: 1,
     borderRightColor: Colors.separator,
+    zIndex: 1,
   },
   flag: {
     fontSize: 24,
@@ -122,10 +168,6 @@ const styles = StyleSheet.create({
   },
   scrollView: {
     flex: 1,
-  },
-  scrollContent: {
-    paddingHorizontal: 8,
-    paddingVertical: 8,
   },
   hourBlock: {
     width: HOUR_BLOCK_WIDTH,

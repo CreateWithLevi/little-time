@@ -152,7 +152,11 @@ export default function MainScreen() {
       </View>
 
       {/* Time Slider */}
-      <TimeSlider value={selectedHour} onValueChange={setSelectedHour} />
+      <TimeSlider
+        value={selectedHour}
+        onValueChange={setSelectedHour}
+        localTimezone={Intl.DateTimeFormat().resolvedOptions().timeZone}
+      />
 
       {/* City List */}
       <ScrollView

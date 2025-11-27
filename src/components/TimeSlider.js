@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   View,
   Text,
@@ -10,16 +10,58 @@ import * as Haptics from 'expo-haptics';
 import Colors from '../constants/Colors';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
-const SLIDER_WIDTH = SCREEN_WIDTH - 48; // 24px padding on each side
+// Correct width calculation: Screen - (Margin * 2) - (Padding * 2)
+// Margin: 16, Padding: 24
+const SLIDER_OFFSET = 16 + 24; // 40
+const SLIDER_WIDTH = SCREEN_WIDTH - (SLIDER_OFFSET * 2); // Screen - 80
 const SLIDER_HEIGHT = 60;
 
 /**
  * TimeSlider - Custom iOS-style slider with haptic feedback
  * Allows users to scrub through 24 hours (0-23)
  */
-export default function TimeSlider({ value, onValueChange }) {
+export default function TimeSlider({ value, onValueChange, localTimezone }) {
   const [isDragging, setIsDragging] = useState(false);
+  // Track the visual position of the thumb (0 to SLIDER_WIDTH)
+  const [thumbX, setThumbX] = useState((value / 23) * SLIDER_WIDTH);
+
+  // Refs to avoid stale closures in PanResponder
+  const valueRef = useRef(value);
+  const onValueChangeRef = useRef(onValueChange);
   const lastHapticValue = useRef(value);
+
+  // Update refs and sync thumb position when not dragging
+  useEffect(() => {
+    valueRef.current = value;
+    onValueChangeRef.current = onValueChange;
+
+    // If not dragging, snap thumb to the current value
+    if (!isDragging) {
+      setThumbX((value / 23) * SLIDER_WIDTH);
+    }
+  }, [value, onValueChange, isDragging]);
+
+  const handleTouch = (screenX) => {
+    // Convert absolute screen X to local slider X
+    const localX = screenX - SLIDER_OFFSET;
+    const clampedX = Math.max(0, Math.min(localX, SLIDER_WIDTH));
+
+    // Update visual thumb position immediately for smoothness
+    setThumbX(clampedX);
+
+    // Calculate the discrete hour value (0-23)
+    const newValue = Math.round((clampedX / SLIDER_WIDTH) * 23);
+
+    // Only trigger update if value changed
+    if (newValue !== valueRef.current) {
+      // Trigger haptic feedback when value changes
+      if (newValue !== lastHapticValue.current) {
+        Haptics.selectionAsync();
+        lastHapticValue.current = newValue;
+      }
+      onValueChangeRef.current(newValue);
+    }
+  };
 
   // PanResponder for touch handling
   const panResponder = useRef(
@@ -27,13 +69,15 @@ export default function TimeSlider({ value, onValueChange }) {
       onStartShouldSetPanResponder: () => true,
       onMoveShouldSetPanResponder: () => true,
 
-      onPanResponderGrant: (evt) => {
+      onPanResponderGrant: (evt, gestureState) => {
         setIsDragging(true);
-        handleTouch(evt.nativeEvent.locationX);
+        // Use pageX for the initial touch position
+        handleTouch(evt.nativeEvent.pageX);
       },
 
-      onPanResponderMove: (evt) => {
-        handleTouch(evt.nativeEvent.locationX);
+      onPanResponderMove: (evt, gestureState) => {
+        // Use moveX for subsequent movements
+        handleTouch(gestureState.moveX);
       },
 
       onPanResponderRelease: () => {
@@ -47,30 +91,16 @@ export default function TimeSlider({ value, onValueChange }) {
     })
   ).current;
 
-  const handleTouch = (x) => {
-    // Clamp x position to slider bounds
-    const clampedX = Math.max(0, Math.min(x, SLIDER_WIDTH));
-
-    // Convert position to hour (0-23)
-    const newValue = Math.round((clampedX / SLIDER_WIDTH) * 23);
-
-    if (newValue !== value) {
-      // Trigger haptic feedback when value changes
-      if (newValue !== lastHapticValue.current) {
-        Haptics.selectionAsync();
-        lastHapticValue.current = newValue;
-      }
-      onValueChange(newValue);
-    }
-  };
-
-  // Calculate thumb position based on current value
-  const thumbPosition = (value / 23) * SLIDER_WIDTH;
+  // Format timezone name to be cleaner (e.g., "Asia/Taipei" -> "Taipei")
+  const displayTimezone = localTimezone ? localTimezone.split('/').pop().replace(/_/g, ' ') : 'Local Time';
 
   return (
     <View style={styles.container}>
       <View style={styles.labelContainer}>
-        <Text style={styles.label}>時間選擇</Text>
+        <View>
+          <Text style={styles.label}>時間選擇</Text>
+          <Text style={styles.subLabel}>{displayTimezone}</Text>
+        </View>
         <Text style={styles.valueLabel}>{value.toString().padStart(2, '0')}:00</Text>
       </View>
 
@@ -82,7 +112,7 @@ export default function TimeSlider({ value, onValueChange }) {
             style={[
               styles.activeTrack,
               {
-                width: thumbPosition,
+                width: thumbX,
               },
             ]}
           />
@@ -93,7 +123,7 @@ export default function TimeSlider({ value, onValueChange }) {
           style={[
             styles.thumb,
             {
-              left: thumbPosition - 16, // Center the thumb (32px width / 2)
+              left: thumbX - 16, // Center the thumb (32px width / 2)
             },
             isDragging && styles.thumbActive,
           ]}
@@ -152,6 +182,12 @@ const styles = StyleSheet.create({
     fontSize: 17,
     fontWeight: '600',
     color: Colors.textPrimary,
+  },
+  subLabel: {
+    fontSize: 13,
+    color: Colors.textSecondary,
+    marginTop: 2,
+    fontWeight: '500',
   },
   valueLabel: {
     fontSize: 20,

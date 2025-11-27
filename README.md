@@ -16,8 +16,8 @@ A beautiful, production-ready React Native mobile app for tracking time across m
 ## Tech Stack
 
 - **Expo SDK 52**
-- **React Native 0.76.5**
-- **expo-haptics**: Haptic feedback
+- **React Native 0.76.5Haptic**
+- **expo-haptics**:  feedback
 - **expo-clipboard**: Clipboard functionality
 - **expo-linear-gradient**: Gradient backgrounds
 - **expo-blur**: Blur effects for modals
